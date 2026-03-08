@@ -1,4 +1,5 @@
 .lightning_studio/
+data/
 
 .cursor-server
 .idea/this_studio.iml
