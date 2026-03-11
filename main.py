@@ -1,6 +1,6 @@
 # main.py
 """
-Main entry point for Network Traffic  Data Analyzer
+Main entry point for Network Traffic Data Analyzer
 """
 
 import sys
@@ -15,20 +15,30 @@ from src.data_loader import load_and_explore
 from src.preprocessing import preprocess_data
 from src.train import train_all_models
 from src.evaluate import evaluate_all_models
+from src.predict import predict_from_csv, predict_from_pcap
 from src.config import SAMPLE_SIZE
 
 def main():
     """Main execution"""
     parser = argparse.ArgumentParser(
-        description='Network Intrusion Detection System - Pattern Recognition Project'
+        description='Network Traffic Data Analyzer - Pattern Recognition Project'
     )
     parser.add_argument('--mode', type=str, default='explore',
-                       choices=['explore', 'preprocess', 'train', 'evaluate', 'full'],
+                       choices=['explore', 'preprocess', 'train', 'evaluate', 'predict', 'full'],
                        help='Execution mode')
     parser.add_argument('--sample', type=int, default=SAMPLE_SIZE,
                        help=f'Sample size for dataset (default: {SAMPLE_SIZE})')
     parser.add_argument('--no-sample', action='store_true',
                        help='Use full dataset (no sampling)')
+    
+    # Prediction arguments
+    parser.add_argument('--input', type=str,
+                       help='Input file for prediction (CSV or PCAP)')
+    parser.add_argument('--model', type=str, default='ensemble',
+                       choices=['rf', 'mlp', 'svm', 'knn', 'ensemble'],
+                       help='Model to use for prediction (default: ensemble)')
+    parser.add_argument('--output', type=str,
+                       help='Output file for predictions (CSV)')
     
     args = parser.parse_args()
     
@@ -40,7 +50,8 @@ def main():
     print("Pattern Recognition & Analysis Course Project")
     print("="*60)
     print(f"Mode: {args.mode}")
-    print(f"Sample size: {sample_size if sample_size else 'Full dataset'}")
+    if args.mode != 'predict':
+        print(f"Sample size: {sample_size if sample_size else 'Full dataset'}")
     print("="*60)
     
     try:
@@ -61,6 +72,37 @@ def main():
         elif args.mode == 'evaluate':
             print("\n>>> Evaluating all models...")
             evaluate_all_models()
+        
+        elif args.mode == 'predict':
+            if not args.input:
+                print("\n✗ Error: --input file is required for prediction mode")
+                print("\nUsage:")
+                print("  python main.py --mode predict --input yourfile.csv --model ensemble")
+                sys.exit(1)
+            
+            print(f"\n>>> Running prediction on: {args.input}")
+            print(f">>> Using model: {args.model}")
+            
+            # Detect file type
+            if args.input.endswith('.pcap'):
+                results = predict_from_pcap(args.input, args.model)
+            elif args.input.endswith('.csv'):
+                results = predict_from_csv(args.input, args.model)
+            else:
+                print("\n✗ Error: Input file must be .csv or .pcap")
+                sys.exit(1)
+            
+            # Save results if output specified
+            if args.output:
+                results.to_csv(args.output, index=False)
+                print(f"\n✓ Results saved to: {args.output}")
+            else:
+                # Display first 10 predictions
+                print("\n" + "="*60)
+                print("SAMPLE PREDICTIONS (first 10)")
+                print("="*60)
+                print(results.head(10))
+                print("\nTo save results, use: --output results.csv")
             
         elif args.mode == 'full':
             print("\n>>> Running FULL pipeline...")
