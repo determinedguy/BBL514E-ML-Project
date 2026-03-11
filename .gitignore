@@ -1,8 +1,13 @@
 .lightning_studio/
 data/
+data_processed/
+results/
+models/
 
 .cursor-server
 .idea/this_studio.iml
 .vscode-server
 .vscode/settings.json
 .windsurf-server
+
+*.pyc
