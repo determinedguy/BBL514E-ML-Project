@@ -1,8 +1,8 @@
 .lightning_studio/
-data/
-data_processed/
-results/
-models/
+/data/
+/data_processed/
+/results/
+/models/
 
 .cursor-server
 .idea/this_studio.iml
@@ -10,4 +10,7 @@ models/
 .vscode/settings.json
 .windsurf-server
 
+# Ignore Python caches
+__pycache__/
 *.pyc
+.ipynb_checkpoints/
