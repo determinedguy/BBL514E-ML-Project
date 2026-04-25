@@ -5,6 +5,7 @@ from src.data.preprocess import split_data, remove_highly_correlated_features, s
 from src.models.train import train_baselines
 from src.models.tune import tune_random_forest
 from src.models.evaluate import evaluate_model
+from src.models.mlp import train_fast_mlp
 from src.models.export import save_model
 
 def main():
@@ -66,6 +67,16 @@ def main():
 
     # 9. Final Evaluation (Testing the tuned model on Unseen Data)
     evaluate_model(best_rf_model, X_val, y_val, model_name="Optimized Random Forest")
+
+    # --- Train the Fast MLP ---
+    # 1. Train it directly on the SMOTE data (no grid search required for the fast prototype)
+    mlp_model = train_fast_mlp(X_train_smote, y_train_smote, config.RANDOM_STATE)
+    
+    # 2. Save it immediately for the demo
+    save_model(mlp_model, config.MODEL_SAVE_DIR, "fast_mlp_model")
+    
+    # 3. Evaluate it against the unseen Validation set
+    evaluate_model(mlp_model, X_val, y_val, model_name="Scikit-Learn MLP Prototype")
 
     # End Master Timer
     pipeline_end = time.time()
