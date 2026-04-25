@@ -1,3 +1,4 @@
+import time
 from src import config
 from src.data.load import load_and_clean_data
 from src.data.preprocess import split_data, remove_highly_correlated_features, scale_features, apply_smote, save_processed_data, load_processed_data
@@ -7,6 +8,9 @@ from src.models.evaluate import evaluate_model
 from src.models.export import save_model
 
 def main():
+    # Start Master Timer
+    pipeline_start = time.time()
+
     print("Starting Pattern Recognition Pipeline...")
     
     # Check if processed data already exists
@@ -57,11 +61,17 @@ def main():
     # 7. Model Tuning (Happens exclusively on Training Data)
     best_rf_model = tune_random_forest(X_train_smote, y_train_smote, config.RANDOM_STATE)
     
-    # Save the model immediately after tuning!
+    # 8. Save the model immediately after tuning!
     save_model(best_rf_model, config.MODEL_SAVE_DIR, "best_rf_model")
 
-    # 8. Final Evaluation (Testing the tuned model on Unseen Data)
+    # 9. Final Evaluation (Testing the tuned model on Unseen Data)
     evaluate_model(best_rf_model, X_val, y_val, model_name="Optimized Random Forest")
+
+    # End Master Timer
+    pipeline_end = time.time()
+    total_mins, total_secs = divmod(pipeline_end - pipeline_start, 60)
+    print(f"\n[DIAGNOSTIC] Total Pipeline Execution Time: {int(total_mins)}m {int(total_secs)}s")
+    print("--- Pipeline Execution Finished ---")
 
 if __name__ == "__main__":
     main()
