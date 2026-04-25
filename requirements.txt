@@ -7,3 +7,4 @@ imbalanced-learn
 pyarrow
 fastparquet
 joblib
+tensorflow

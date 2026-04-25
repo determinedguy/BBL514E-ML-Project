@@ -1,5 +1,8 @@
+import sys
 import time
+from datetime import datetime
 from src import config
+from src.logger import DualLogger
 from src.data.load import load_and_clean_data
 from src.data.preprocess import split_data, remove_highly_correlated_features, scale_features, apply_smote, save_processed_data, load_processed_data
 from src.models.train import train_baselines
@@ -7,6 +10,10 @@ from src.models.tune import tune_random_forest
 from src.models.evaluate import evaluate_model
 from src.models.mlp import train_fast_mlp
 from src.models.export import save_model
+
+# Hijack the terminal output to save to a file
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+sys.stdout = DualLogger(f"demo_run_{timestamp}.txt")
 
 def main():
     # Start Master Timer
