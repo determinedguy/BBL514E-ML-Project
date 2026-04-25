@@ -25,8 +25,7 @@ def tune_random_forest(X_train, y_train, random_state: int):
     }
 
     # 3. Setup RandomizedSearch with 5-fold Cross-Validation
-    # We use n_jobs=-1 to use all CPU cores, making this run much faster on Lightning
-    print(f"Running Random Search (5-fold CV) with {len(param_dist['n_estimators']) * len(param_dist['max_depth']) * len(param_dist['min_samples_split'])} combinations...")
+    # n_jobs=-1 is specified to use all CPU cores, making this run much faster on Lightning
     
     # Start Timer
     start_time = time.time()
@@ -39,11 +38,12 @@ def tune_random_forest(X_train, y_train, random_state: int):
         scoring='f1',       
         n_jobs=-1,
         random_state=random_state,
-        verbose=1 # Reduced verbosity so it doesn't flood the terminal
+        verbose=2
     )
     
     # 4. Fit the search ONLY on the 10% sub-sample
-    print("Fitting RandomizedSearchCV on 10% sub-sample...")
+
+    print(f"Fitting RandomizedSearchCV (5-fold CV)on 10% sub-sample with {len(param_dist['n_estimators']) * len(param_dist['max_depth']) * len(param_dist['min_samples_split'])} combinations...")
     random_search.fit(X_tune, y_tune)
     
     print(f"\nBest Parameters Found: {random_search.best_params_}")
