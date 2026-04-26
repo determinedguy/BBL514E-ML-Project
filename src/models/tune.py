@@ -43,7 +43,7 @@ def tune_random_forest(X_train, y_train, random_state: int):
     
     # 4. Fit the search ONLY on the 10% sub-sample
 
-    print(f"Fitting RandomizedSearchCV (5-fold CV)on 10% sub-sample with {len(param_dist['n_estimators']) * len(param_dist['max_depth']) * len(param_dist['min_samples_split'])} combinations...")
+    print(f"Fitting RandomizedSearchCV ({random_search.cv}-fold CV) on 10% sub-sample with {len(param_dist['n_estimators']) * len(param_dist['max_depth']) * len(param_dist['min_samples_split'])} combinations...")
     random_search.fit(X_tune, y_tune)
     
     print(f"\nBest Parameters Found: {random_search.best_params_}")
