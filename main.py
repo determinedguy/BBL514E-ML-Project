@@ -1,5 +1,6 @@
 import sys
 import time
+import joblib
 from datetime import datetime
 from src import config
 from src.logger import DualLogger
@@ -48,6 +49,11 @@ def main():
         
         # 4. Normalization
         X_train, X_val, X_test, scaler = scale_features(X_train, X_val, X_test)
+        
+        # Save the scaler immediately for the API
+        scaler_path = config.PROCESSED_DATA_DIR / "scaler.joblib"
+        joblib.dump(scaler, scaler_path)
+        print(f"SUCCESS: Scaler saved to {scaler_path}")
         
         # 5. Class Balancing
         X_train_smote, y_train_smote = apply_smote(

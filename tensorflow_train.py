@@ -7,7 +7,7 @@ from src.models.mlp_tf import build_and_train_tf
 
 # Hijack the terminal output to save to a file
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-sys.stdout = DualLogger(f"overnight_build_{timestamp}.txt")
+sys.stdout = DualLogger(f"tensorflow_build_{timestamp}.txt")
 
 def run_overnight_build():
     print("Loading datasets from disk...")

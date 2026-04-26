@@ -8,3 +8,6 @@ pyarrow
 fastparquet
 joblib
 tensorflow
+fastapi
+uvicorn
+python-multipart

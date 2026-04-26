@@ -2,18 +2,15 @@ import pandas as pd
 import joblib
 import numpy as np
 from pathlib import Path
+from src import config
 
 # --- 1. Initialization (Run once when the server starts) ---
 print("Loading Pattern Recognition Models into memory...")
 
-# Update these paths based on where the backend server files are located
-MODEL_DIR = Path("models")
-DATA_DIR = Path("data/processed")
-
 # Load the saved artifacts
-scaler = joblib.load(DATA_DIR / "scaler.joblib")
-rf_model = joblib.load(MODEL_DIR / "best_rf_model.joblib")
-mlp_model = joblib.load(MODEL_DIR / "fast_mlp_model.joblib")
+scaler = joblib.load(config.PROCESSED_DATA_DIR / "scaler.joblib")
+rf_model = joblib.load(config.MODEL_SAVE_DIR / "best_rf_model.joblib")
+mlp_model = joblib.load(config.MODEL_SAVE_DIR / "fast_mlp_model.joblib")
 
 # Keep the exact feature columns your models expect
 EXPECTED_FEATURES = [
