@@ -33,7 +33,7 @@ def build_and_train_tf(X_train, y_train, X_val, y_val, random_state: int):
     )
     
     start_time = time.time()
-    print("\nStarting overnight training. You can safely step away...")
+    print("\nStarting Tensorflow MLP training. You can safely step away...")
     
     history = model.fit(
         X_train, y_train,
