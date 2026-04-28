@@ -12,6 +12,8 @@
 .windsurf-server
 /.keras/
 
+models.tar.gz
+
 # Ignore Python caches
 __pycache__/
 *.pyc
