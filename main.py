@@ -14,13 +14,30 @@ from src.models.export import save_model
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
+from sklearn.ensemble import VotingClassifier
 from src.models.mlp_tf import build_and_train_tf
 
 # Hijack the terminal output to save to a file
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 sys.stdout = DualLogger(f"demo_run_{timestamp}.txt")
+
+# --- Helper function for logging ---
+def print_metrics(name, y_true, y_pred, y_prob):
+        acc = accuracy_score(y_true, y_pred)
+        prec = precision_score(y_true, y_pred)
+        rec = recall_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+        fpr = fp / (fp + tn)
+        roc = roc_auc_score(y_true, y_prob)
+
+        print(f"\n--- Evaluating {name} ---")
+        print(f"Accuracy:  {acc:.4f}")
+        print(f"Precision: {prec:.4f}")
+        print(f"Recall:    {rec:.4f}")
+        print(f"F1-Score:  {f1:.4f}")
+        print(f"FPR:       {fpr:.4f}")
+        print(f"ROC-AUC:   {roc}") 
 
 def main():
     # Start Master Timer
@@ -87,7 +104,7 @@ def main():
     # 9. Final Evaluation (Testing the tuned model on Unseen Data)
     evaluate_model(best_rf_model, X_val, y_val, model_name="Optimized Random Forest")
 
-    # --- Train the Fast MLP ---
+    # Train the Fast MLP (scikit)
     # 1. Train it directly on the SMOTE data (no grid search required for the fast prototype)
     mlp_model = train_fast_mlp(X_train_smote, y_train_smote, config.RANDOM_STATE)
     
@@ -97,32 +114,7 @@ def main():
     # 3. Evaluate it against the unseen Validation set
     evaluate_model(mlp_model, X_val, y_val, model_name="Scikit-Learn MLP Prototype")
 
-    # =====================================================================
-    # 10. THE PROPOSAL REQUIREMENTS (Ensemble, KNN, SVM, TensorFlow)
-    # =====================================================================
-    print("\n" + "="*50)
-    print("EVALUATING REMAINING PROPOSAL REQUIREMENTS")
-    print("="*50)
-
-    # --- Helper function for perfectly uniform thesis logging ---
-    def print_metrics(name, y_true, y_pred, y_prob):
-        acc = accuracy_score(y_true, y_pred)
-        prec = precision_score(y_true, y_pred)
-        rec = recall_score(y_true, y_pred)
-        f1 = f1_score(y_true, y_pred)
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-        fpr = fp / (fp + tn)
-        roc = roc_auc_score(y_true, y_prob)
-
-        print(f"\n--- Evaluating {name} ---")
-        print(f"Accuracy:  {acc:.4f}")
-        print(f"Precision: {prec:.4f}")
-        print(f"Recall:    {rec:.4f}")
-        print(f"F1-Score:  {f1:.4f}")
-        print(f"FPR:       {fpr:.4f}")
-        print(f"ROC-AUC:   {roc}") 
-
-    # --- A. Evaluate the RF + Scikit-MLP Ensemble ---
+    # Evaluate the RF + Scikit-MLP Ensemble
     rf_probs = best_rf_model.predict_proba(X_val)[:, 1] # type: ignore
     mlp_probs = mlp_model.predict_proba(X_val)[:, 1] # type: ignore
     
@@ -131,33 +123,28 @@ def main():
     
     print_metrics("Proposal Ensemble (RF + Fast MLP)", y_val, ensemble_preds, ensemble_probs)
 
-    # --- B. Downsample to 10% for SVM & KNN ---
-    print("\nDownsampling SMOTE data to 10% for SVM & KNN constraints...")
-    _, X_train_small, _, y_train_small = train_test_split(
-        X_train_smote, y_train_smote, 
-        test_size=0.10, stratify=y_train_smote, random_state=config.RANDOM_STATE
+    print("\nBuilding the Single-File Ensemble Wrapper...")
+
+    # 1. Wrap the models together. 
+    # voting='soft' tells it to average the probabilities automatically!
+    ensemble_model = VotingClassifier(
+        estimators=[
+            ('random_forest', best_rf_model),
+            ('scikit_mlp', mlp_model)
+        ],
+        voting='soft'
     )
 
-    # --- C. KNN Classifier ---
-    print("Training K-Nearest Neighbors (k=5)...")
-    knn = KNeighborsClassifier(n_neighbors=5, metric='euclidean', n_jobs=-1)
-    knn.fit(X_train_small, y_train_small)
-    
-    knn_preds = knn.predict(X_val)
-    knn_probs = knn.predict_proba(X_val)[:, 1] # type: ignore
-    print_metrics("KNN (k=5)", y_val, knn_preds, knn_probs)
+    # 2. You HAVE to fit the wrapper so it knows how to route the data
+    # (Since the individual models are already trained, this is very fast)
+    ensemble_model.fit(X_train_smote, y_train_smote)
 
-    # --- D. SVM with RBF Kernel ---
-    print("Training Support Vector Machine (RBF Kernel)... (This may take a few minutes)")
-    svm = SVC(kernel='rbf', random_state=config.RANDOM_STATE)
-    svm.fit(X_train_small, y_train_small)
-    
-    svm_preds = svm.predict(X_val)
-    # Use decision_function instead of predict_proba to save massive compute time
-    svm_decision_scores = svm.decision_function(X_val) 
-    print_metrics("SVM (RBF Kernel)", y_val, svm_preds, svm_decision_scores)
+    # 3. Save it as a single file!
+    ensemble_path = config.MODEL_SAVE_DIR / "final_ensemble_model.joblib"
+    joblib.dump(ensemble_model, ensemble_path)
+    print(f"SUCCESS: Single ensemble saved to {ensemble_path}")
 
-    # --- E. TensorFlow MLP (Strict Math Compliance) ---
+    # TensorFlow MLP (Strict Math Compliance)
     print("\nTraining Strict TensorFlow MLP Architecture...")
     # Use np.asarray() to safely convert everything for TensorFlow
     X_train_tf = np.asarray(X_train_smote)

@@ -1,8 +1,8 @@
-# evaluate_svm.py
 import sys
 import time
 from datetime import datetime
 import pandas as pd
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
@@ -49,24 +49,36 @@ def main():
     y_val = pd.read_parquet(config.PROCESSED_DATA_DIR / "y_val.parquet")['Label']
 
     print("\nDownsampling to 10% Stratified (Original Configuration)...")
-    _, X_svm, _, y_svm = train_test_split(
+    _, X_train_small, _, y_train_small = train_test_split(
         X_train_full, y_train_full, 
         test_size=0.10, 
         stratify=y_train_full, 
         random_state=config.RANDOM_STATE
     )
 
-    print(f"Training on {len(X_svm)} rows...")
+    # 1. KNN Classifier 
+    print("Training K-Nearest Neighbors (k=5)...")
+    knn = KNeighborsClassifier(n_neighbors=5, metric='euclidean', n_jobs=-1)
+    knn.fit(X_train_small, y_train_small)
+    
+    knn_preds = knn.predict(X_val)
+    knn_probs = knn.predict_proba(X_val)[:, 1] # type: ignore
+    print_metrics("KNN (k=5)", y_val, knn_preds, knn_probs)
+
+    # 2. SVM with RBF Kernel
+
+    print(f"Training on {len(X_train_small)} rows...")
     print("Training Support Vector Machine (RBF Kernel)... (This may take a few minutes)")
     
     # The original, unconstrained SVM model
     svm = SVC(kernel='rbf', random_state=config.RANDOM_STATE)
-    svm.fit(X_svm, y_svm)
+    svm.fit(X_train_small, y_train_small)
     
     print("\nPredicting on Validation Set...")
     svm_preds = svm.predict(X_val)
     # We still use decision_function here because it calculates the ROC-AUC instantly 
     # without needing the massive RAM overhead of probability=True
+    # Use decision_function instead of predict_proba to save massive compute time
     svm_decision_scores = svm.decision_function(X_val) 
     
     print_metrics("SVM (RBF Kernel)", y_val, svm_preds, svm_decision_scores)
