@@ -4,6 +4,7 @@ from pathlib import Path
 RAW_DATA_DIR = Path("/teamspace/lightning_storage/MachineLearningCVE") # Primary dataset location in Lightning AI
 PROCESSED_DATA_DIR = Path("./data/processed")
 MODEL_SAVE_DIR = Path("./models")
+PLOT_DIR = Path("./plots")
 
 # ML Hyperparameters
 RANDOM_STATE = 42
