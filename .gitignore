@@ -1,13 +1,20 @@
 .lightning_studio/
-data/
-data_processed/
-results/
-models/
+/data/
+/data_processed/
+/results/
+/models/
+/logs/
 
 .cursor-server
 .idea/this_studio.iml
 .vscode-server
 .vscode/settings.json
 .windsurf-server
+/.keras/
 
+models.tar.gz
+
+# Ignore Python caches
+__pycache__/
 *.pyc
+.ipynb_checkpoints/
