@@ -62,3 +62,6 @@ def main():
     print("\nGenerating Graph 2: Confusion Matrix Heatmaps...")
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle('Confusion Matrices on Validation Data', fontweight='bold', fontsize=16)
+
+if __name__ == "__main__":
+    main()
