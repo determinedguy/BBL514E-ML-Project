@@ -4,6 +4,7 @@
 /results/
 /models/
 /logs/
+/plots/
 
 .cursor-server
 .idea/this_studio.iml

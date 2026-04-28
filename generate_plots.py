@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import roc_curve, auc, confusion_matrix
 import os
+import tensorflow as tf
 from src import config
 
 # Create a folder to save your publication-ready graphs
@@ -15,64 +16,100 @@ os.makedirs(PLOT_DIR, exist_ok=True)
 plt.style.use('seaborn-v0_8-whitegrid')
 plt.rcParams.update({'font.size': 12, 'figure.autolayout': True})
 
+# Tiny adapter class to allow scikit-learn metrics to seamlessly read TensorFlow outputs
+class KerasScikitWrapper:
+    def __init__(self, model):
+        self.model = model
+    def predict(self, X):
+        return np.argmax(self.model.predict(X, verbose=0), axis=1)
+    def predict_proba(self, X):
+        return self.model.predict(X, verbose=0)
+
 def main():
     print("Loading Validation Data and Saved Models...")
     
-    # Load Data (Parquet preserves column names for Feature Importance)
+    # Load Data (Parquet preserves column names)
     X_val = pd.read_parquet(config.PROCESSED_DATA_DIR / "X_val.parquet")
     y_val = pd.read_parquet(config.PROCESSED_DATA_DIR / "y_val.parquet")['Label']
     
+    # Convert to numpy array safely for TensorFlow
+    X_val_np = np.asarray(X_val)
+
     # Load Models
-    print("Loading model artifacts...")
+    print("Loading Scikit-Learn artifacts...")
     rf_model = joblib.load(config.MODEL_SAVE_DIR / "best_rf_model.joblib")
     mlp_model = joblib.load(config.MODEL_SAVE_DIR / "fast_mlp_model.joblib")
     ensemble_model = joblib.load(config.MODEL_SAVE_DIR / "final_ensemble_model.joblib")
-
-    # =====================================================================
-    # GRAPH 1: COMPARATIVE ROC CURVE
-    # =====================================================================
-    print("\nGenerating Graph 1: Comparative ROC Curve...")
-    plt.figure(figsize=(10, 8))
     
+    print("Loading TensorFlow artifact...")
+    tf_keras_model = tf.keras.models.load_model(config.MODEL_SAVE_DIR / "mlp_tf_model.keras")
+    tf_model_wrapped = KerasScikitWrapper(tf_keras_model)
+
+    # Dictionary of all models for easy plotting
     models = {
         "Optimized Random Forest": rf_model,
         "Fast MLP (Scikit)": mlp_model,
-        "Soft Voting Ensemble": ensemble_model
+        "Soft Voting Ensemble": ensemble_model,
+        "Strict TensorFlow MLP": tf_model_wrapped
     }
+
+    # =====================================================================
+    # GRAPH 1: COMPARATIVE ROC CURVE (Full & Zoomed)
+    # =====================================================================
+    print("\nGenerating Graph 1: Comparative ROC Curve...")
     
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+    # Create a 1x2 side-by-side layout for the ROC
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle('Receiver Operating Characteristic (ROC) Comparison', fontweight='bold', fontsize=16)
+    
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
     
     for (name, model), color in zip(models.items(), colors):
-        # Get probabilities for the "Malicious" class
-        y_prob = model.predict_proba(X_val)[:, 1]
+        y_prob = model.predict_proba(X_val_np)[:, 1]
         fpr, tpr, _ = roc_curve(y_val, y_prob)
         roc_auc = auc(fpr, tpr)
         
-        plt.plot(fpr, tpr, color=color, lw=2, label=f'{name} (AUC = {roc_auc:.4f})')
+        # Plot on the Full View (ax1)
+        ax1.plot(fpr, tpr, color=color, lw=2, label=f'{name} (AUC = {roc_auc:.4f})')
+        # Plot on the Zoomed View (ax2)
+        ax2.plot(fpr, tpr, color=color, lw=2, label=f'{name} (AUC = {roc_auc:.4f})')
 
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', alpha=0.6)
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate (FPR)', fontweight='bold')
-    plt.ylabel('True Positive Rate (TPR)', fontweight='bold')
-    plt.title('Receiver Operating Characteristic (ROC) Comparison', fontweight='bold', fontsize=14)
-    plt.legend(loc="lower right")
+    # Formatting: Full View
+    ax1.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', alpha=0.6)
+    ax1.set_xlim([0.0, 1.0])
+    ax1.set_ylim([0.0, 1.05])
+    ax1.set_xlabel('False Positive Rate (FPR)', fontweight='bold')
+    ax1.set_ylabel('True Positive Rate (TPR)', fontweight='bold')
+    ax1.set_title('Full View', fontweight='bold')
+    ax1.legend(loc="lower right")
+
+    # Formatting: Zoomed View (Magnifying the top-left corner)
+    ax2.set_xlim([-0.001, 0.05]) # Focus strictly on 0% to 5% FPR
+    ax2.set_ylim([0.95, 1.001])  # Focus strictly on 95% to 100% TPR
+    ax2.set_xlabel('False Positive Rate (FPR)', fontweight='bold')
+    ax2.set_ylabel('True Positive Rate (TPR)', fontweight='bold')
+    ax2.set_title('Zoomed View (Top-Left)', fontweight='bold')
+    ax2.legend(loc="lower right")
+    ax2.grid(True, which='both', linestyle='--', alpha=0.4)
     
     roc_path = PLOT_DIR / "comparative_roc_curve.png"
-    plt.savefig(roc_path, dpi=300)
+    plt.savefig(roc_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"-> Saved to {roc_path}")
-
 
     # =====================================================================
     # GRAPH 2: CONFUSION MATRIX HEATMAPS
     # =====================================================================
     print("\nGenerating Graph 2: Confusion Matrix Heatmaps...")
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    # Changed from 1x3 to 2x2 grid to fit 4 models beautifully
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle('Confusion Matrices on Validation Data', fontweight='bold', fontsize=16)
+    
+    # Flatten axes for easy iteration
+    axes = axes.flatten()
 
     for ax, (name, model) in zip(axes, models.items()):
-        y_pred = model.predict(X_val)
+        y_pred = model.predict(X_val_np)
         cm = confusion_matrix(y_val, y_pred)
         
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax, cbar=False,
@@ -90,27 +127,24 @@ def main():
 
 
     # =====================================================================
-    # GRAPH 3: FEATURE IMPORTANCE
+    # GRAPH 3: FEATURE IMPORTANCE (Random Forest Only)
     # =====================================================================
     print("\nGenerating Graph 3: Random Forest Feature Importance...")
     plt.figure(figsize=(12, 8))
     
-    # Extract importances safely (in case it is wrapped in a pipeline or grid search)
+    # Extract importances
     try:
         importances = rf_model.feature_importances_
     except AttributeError:
-        # If it was saved as a GridSearchCV object, we need the best_estimator_
         importances = rf_model.best_estimator_.feature_importances_
     
-    # Create a DataFrame to sort them easily
     feature_df = pd.DataFrame({
         'Feature': X_val.columns,
         'Importance': importances
     }).sort_values(by='Importance', ascending=False)
     
-    # Plot top 20 features to keep the graph readable
     top_n = 20
-    sns.barplot(x='Importance', y='Feature', data=feature_df.head(top_n), palette='viridis')
+    sns.barplot(x='Importance', y='Feature', data=feature_df.head(top_n), palette='viridis', hue='Feature', legend=False)
     
     plt.title(f'Top {top_n} Most Critical Network Features (Random Forest)', fontweight='bold', fontsize=14)
     plt.xlabel('Relative Importance', fontweight='bold')
@@ -121,7 +155,7 @@ def main():
     plt.close()
     print(f"-> Saved to {feat_path}")
 
-    print("\nSUCCESS: All 3 publication-ready graphs have been generated in the /plots/ directory!")
+    print("\nSUCCESS: All publication-ready graphs have been generated in the /plots/ directory!")
 
 if __name__ == "__main__":
     main()
