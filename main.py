@@ -2,6 +2,8 @@ import sys
 import time
 import joblib
 from datetime import datetime
+import numpy as np
+
 from src import config
 from src.logger import DualLogger
 from src.data.load import load_and_clean_data
@@ -11,33 +13,12 @@ from src.models.tune import tune_random_forest
 from src.models.evaluate import evaluate_model
 from src.models.mlp import train_fast_mlp
 from src.models.export import save_model
-import numpy as np
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import VotingClassifier
 from src.models.mlp_tf import build_and_train_tf
 
 # Hijack the terminal output to save to a file
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 sys.stdout = DualLogger(f"demo_run_{timestamp}.txt")
-
-# --- Helper function for logging ---
-def print_metrics(name, y_true, y_pred, y_prob):
-        acc = accuracy_score(y_true, y_pred)
-        prec = precision_score(y_true, y_pred)
-        rec = recall_score(y_true, y_pred)
-        f1 = f1_score(y_true, y_pred)
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-        fpr = fp / (fp + tn)
-        roc = roc_auc_score(y_true, y_prob)
-
-        print(f"\n--- Evaluating {name} ---")
-        print(f"Accuracy:  {acc:.4f}")
-        print(f"Precision: {prec:.4f}")
-        print(f"Recall:    {rec:.4f}")
-        print(f"F1-Score:  {f1:.4f}")
-        print(f"FPR:       {fpr:.4f}")
-        print(f"ROC-AUC:   {roc}") 
 
 def main():
     # Start Master Timer
@@ -114,19 +95,12 @@ def main():
     # 3. Evaluate it against the unseen Validation set
     evaluate_model(mlp_model, X_val, y_val, model_name="Scikit-Learn MLP Prototype")
 
-    # Evaluate the RF + Scikit-MLP Ensemble
-    rf_probs = best_rf_model.predict_proba(X_val)[:, 1] # type: ignore
-    mlp_probs = mlp_model.predict_proba(X_val)[:, 1] # type: ignore
-    
-    ensemble_probs = (rf_probs + mlp_probs) / 2.0 # type: ignore
-    ensemble_preds = np.where(ensemble_probs >= 0.5, 1, 0)
-    
-    print_metrics("Proposal Ensemble (RF + Fast MLP)", y_val, ensemble_preds, ensemble_probs)
-
+    # =====================================================================
+    # THE PROPOSAL ENSEMBLE (VotingClassifier Integration)
+    # =====================================================================
     print("\nBuilding the Single-File Ensemble Wrapper...")
 
-    # 1. Wrap the models together. 
-    # voting='soft' tells it to average the probabilities automatically!
+    # 1. Wrap the models together (voting='soft' averages probabilities automatically)
     ensemble_model = VotingClassifier(
         estimators=[
             ('random_forest', best_rf_model),
@@ -135,17 +109,22 @@ def main():
         voting='soft'
     )
 
-    # 2. You HAVE to fit the wrapper so it knows how to route the data
-    # (Since the individual models are already trained, this is very fast)
+    # 2. Fit the wrapper so it routes data correctly
     ensemble_model.fit(X_train_smote, y_train_smote)
 
-    # 3. Save it as a single file!
+    # 3. Save it as a single file
     ensemble_path = config.MODEL_SAVE_DIR / "final_ensemble_model.joblib"
     joblib.dump(ensemble_model, ensemble_path)
     print(f"SUCCESS: Single ensemble saved to {ensemble_path}")
+    
+    # 4. Evaluate it natively
+    evaluate_model(ensemble_model, X_val, y_val, model_name="Proposal Ensemble (RF + Fast MLP)")
 
-    # TensorFlow MLP (Strict Math Compliance)
+    # =====================================================================
+    # TENSORFLOW STRICT COMPLIANCE
+    # =====================================================================
     print("\nTraining Strict TensorFlow MLP Architecture...")
+    
     # Use np.asarray() to safely convert everything for TensorFlow
     X_train_tf = np.asarray(X_train_smote)
     y_train_tf = np.asarray(y_train_smote)
@@ -154,17 +133,22 @@ def main():
 
     tf_model = build_and_train_tf(X_train_tf, y_train_tf, X_val_tf, y_val_tf, config.RANDOM_STATE)
     
-    # Evaluate TensorFlow model
-    tf_probs_full = tf_model.predict(X_val_tf) # Returns probabilities for both classes
-    tf_probs = tf_probs_full[:, 1]             # Isolate "Malicious" class probabilities
-    tf_preds = np.argmax(tf_probs_full, axis=1)# Convert to 0 or 1 based on highest probability
-    
-    print_metrics("TensorFlow MLP Prototype", y_val_tf, tf_preds, tf_probs)
-    
     # Save the TF model
     tf_save_path = config.MODEL_SAVE_DIR / "mlp_tf_model.keras"
     tf_model.save(tf_save_path)
     print(f"\n[DIAGNOSTIC] TensorFlow model successfully saved to {tf_save_path}")
+
+    # Tiny adapter class to allow scikit-learn's evaluate_model to seamlessly read TensorFlow outputs
+    class KerasScikitWrapper:
+        def __init__(self, model):
+            self.model = model
+        def predict(self, X):
+            return np.argmax(self.model.predict(X, verbose=0), axis=1)
+        def predict_proba(self, X):
+            return self.model.predict(X, verbose=0)
+
+    # Evaluate using your native function
+    evaluate_model(KerasScikitWrapper(tf_model), X_val_tf, y_val_tf, model_name="TensorFlow MLP Prototype")
 
     # End Master Timer
     pipeline_end = time.time()
