@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import roc_curve, auc, confusion_matrix
 import os
-import tensorflow as tf
+from keras.models import load_model
 from src import config
 
 # Create a folder to save your publication-ready graphs
@@ -35,41 +35,48 @@ def main():
     X_val_np = np.asarray(X_val)
 
     print("Loading Scikit-Learn Pipelines and Extracting Classifiers...")
-    # We extract .named_steps['classifier'] to avoid double-scaling the already processed X_val data!
+    # We extract .named_steps['clf'] based on your pipeline naming convention
     nb_model = joblib.load(config.MODEL_SAVE_DIR / "naive_bayes_pipeline.joblib").named_steps['clf']
     dt_model = joblib.load(config.MODEL_SAVE_DIR / "decision_tree_pipeline.joblib").named_steps['clf']
     rf_model = joblib.load(config.MODEL_SAVE_DIR / "best_rf_pipeline.joblib").named_steps['clf']
     mlp_model = joblib.load(config.MODEL_SAVE_DIR / "fast_mlp_pipeline.joblib").named_steps['clf']
     ensemble_model = joblib.load(config.MODEL_SAVE_DIR / "final_ensemble_pipeline.joblib").named_steps['clf']
+    linear_svm_model = joblib.load(config.MODEL_SAVE_DIR / "linear_svm_pipeline.joblib").named_steps['clf']
     
     print("Loading TensorFlow artifact...")
-    tf_keras_model = tf.keras.models.load_model(config.MODEL_SAVE_DIR / "mlp_tf_model.keras")
+    tf_keras_model = load_model(config.MODEL_SAVE_DIR / "mlp_tf_model.keras")
     tf_model_wrapped = KerasScikitWrapper(tf_keras_model)
 
-    # Dictionary of all 6 models!
+    # Dictionary of all 7 models!
     models = {
         "Naive Bayes": nb_model,
         "Decision Tree": dt_model,
         "Random Forest": rf_model,
         "Scikit MLP": mlp_model,
         "TensorFlow MLP": tf_model_wrapped,
-        "Ensemble (RF + MLP)": ensemble_model
+        "Ensemble (RF + MLP)": ensemble_model,
+        "Linear SVM": linear_svm_model
     }
 
     # =====================================================================
     # GRAPH 1: COMPARATIVE ROC CURVE (Full & Zoomed)
     # =====================================================================
-    print("\nGenerating Graph 1: Comparative ROC Curve (6 Models)...")
+    print("\nGenerating Graph 1: Comparative ROC Curve (7 Models)...")
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
     fig.suptitle('Receiver Operating Characteristic (ROC) Comparison', fontweight='bold', fontsize=16)
     
-    # 6 distinct colors for the 6 models
-    colors = ['#9467bd', '#8c564b', '#1f77b4', '#ff7f0e', '#d62728', '#2ca02c']
+    # 7 distinct colors
+    colors = ['#9467bd', '#8c564b', '#e377c2', '#1f77b4', '#ff7f0e', '#d62728', '#2ca02c']
     
     for (name, model), color in zip(models.items(), colors):
-        y_prob = model.predict_proba(X_val_np)[:, 1]
-        fpr, tpr, _ = roc_curve(y_val, y_prob)
+        # Linear SVM uses decision_function, everything else uses predict_proba
+        if hasattr(model, "predict_proba"):
+            y_score = model.predict_proba(X_val_np)[:, 1]
+        else:
+            y_score = model.decision_function(X_val_np)
+            
+        fpr, tpr, _ = roc_curve(y_val, y_score)
         roc_auc = auc(fpr, tpr)
         
         ax1.plot(fpr, tpr, color=color, lw=2, label=f'{name} (AUC = {roc_auc:.4f})')
@@ -82,15 +89,15 @@ def main():
     ax1.set_xlabel('False Positive Rate (FPR)', fontweight='bold')
     ax1.set_ylabel('True Positive Rate (TPR)', fontweight='bold')
     ax1.set_title('Full View', fontweight='bold')
-    ax1.legend(loc="lower right")
+    ax1.legend(loc="lower right", fontsize=10)
 
-    # Formatting: Zoomed View (Magnifying the top-left corner)
+    # Formatting: Zoomed View
     ax2.set_xlim([-0.001, 0.05]) 
     ax2.set_ylim([0.95, 1.001])  
     ax2.set_xlabel('False Positive Rate (FPR)', fontweight='bold')
     ax2.set_ylabel('True Positive Rate (TPR)', fontweight='bold')
     ax2.set_title('Zoomed View (Top-Left)', fontweight='bold')
-    ax2.legend(loc="lower right")
+    ax2.legend(loc="lower right", fontsize=10)
     ax2.grid(True, which='both', linestyle='--', alpha=0.4)
     
     roc_path = config.PLOT_DIR / "comparative_roc_curve.png"
@@ -99,17 +106,17 @@ def main():
     print(f"-> Saved to {roc_path}")
 
     # =====================================================================
-    # GRAPH 2: CONFUSION MATRIX HEATMAPS (2x3 Grid)
+    # GRAPH 2: CONFUSION MATRIX HEATMAPS (2x4 Grid)
     # =====================================================================
-    print("\nGenerating Graph 2: Confusion Matrix Heatmaps (6 Models)...")
+    print("\nGenerating Graph 2: Confusion Matrix Heatmaps (7 Models)...")
     
-    # Changed from 2x2 to a 2x3 grid to fit all 6 models perfectly!
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    # 2x4 Grid to fit 7 models
+    fig, axes = plt.subplots(2, 4, figsize=(22, 10))
     fig.suptitle('Confusion Matrices on Validation Data', fontweight='bold', fontsize=16)
     
     axes = axes.flatten()
 
-    for ax, (name, model) in zip(axes, models.items()):
+    for ax, (name, model) in zip(axes[:7], models.items()):
         y_pred = model.predict(X_val_np)
         cm = confusion_matrix(y_val, y_pred)
         
@@ -120,6 +127,9 @@ def main():
         ax.set_title(name, fontweight='bold')
         ax.set_xlabel('Predicted Label')
         ax.set_ylabel('True Label')
+
+    # Hide the 8th (empty) subplot
+    axes[7].set_visible(False)
 
     cm_path = config.PLOT_DIR / "confusion_matrices.png"
     plt.savefig(cm_path, dpi=300, bbox_inches='tight')
@@ -132,7 +142,6 @@ def main():
     print("\nGenerating Graph 3: Random Forest Feature Importance...")
     plt.figure(figsize=(12, 8))
     
-    # Extract importances directly from the un-pipelined Random Forest
     try:
         importances = rf_model.feature_importances_
     except AttributeError:
