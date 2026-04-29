@@ -12,8 +12,9 @@ from src.models.train import train_baselines
 from src.models.tune import tune_random_forest
 from src.models.evaluate import evaluate_model
 from src.models.mlp import train_fast_mlp
-from src.models.export import save_model
+from src.models.export import save_pipeline  # <--- Clean import restored
 from sklearn.ensemble import VotingClassifier
+from sklearn.compose import ColumnTransformer
 from src.models.mlp_tf import build_and_train_tf
 
 # Hijack the terminal output to save to a file
@@ -30,6 +31,9 @@ def main():
     if (config.PROCESSED_DATA_DIR / "X_train_smote.parquet").exists():
         print("Found existing processed data. Bypassing data ingestion and SMOTE...")
         X_train_smote, y_train_smote, X_val, y_val, X_test, y_test = load_processed_data(config.PROCESSED_DATA_DIR)
+        
+        # WE MUST LOAD THE SCALER HERE to build the pipelines later
+        scaler = joblib.load(config.PROCESSED_DATA_DIR / "scaler.joblib")
     
     else:
         print("Processed data not found. Running full preprocessing pipeline...")
@@ -71,36 +75,50 @@ def main():
             config.PROCESSED_DATA_DIR
         )
 
-    # 6. Baseline Training & Evaluation
-    nb_model, dt_model = train_baselines(X_train_smote, y_train_smote, config.RANDOM_STATE)
-    evaluate_model(nb_model, X_val, y_val, model_name="Naive Bayes Baseline")
-    evaluate_model(dt_model, X_val, y_val, model_name="Decision Tree Baseline")
+    # =====================================================================
+    # BUILD THE MASTER PREPROCESSOR FOR SAVING PIPELINES
+    # =====================================================================
+    # Get the exact feature names the models expect
+    expected_features = X_train_smote.columns.tolist()
+    
+    # Create a transformer that scales the expected features and drops everything else
+    preprocessor = ColumnTransformer(
+        transformers=[('scaler', scaler, expected_features)],
+        remainder='drop' 
+    )
 
-    # 7. Model Tuning (Happens exclusively on Training Data)
+    # =====================================================================
+    # BASELINES
+    # =====================================================================
+    nb_model, dt_model = train_baselines(X_train_smote, y_train_smote, config.RANDOM_STATE)
+    
+    evaluate_model(nb_model, X_val, y_val, model_name="Naive Bayes Baseline")
+    save_pipeline(nb_model, preprocessor, config.MODEL_SAVE_DIR, "naive_bayes_pipeline")
+    
+    evaluate_model(dt_model, X_val, y_val, model_name="Decision Tree Baseline")
+    save_pipeline(dt_model, preprocessor, config.MODEL_SAVE_DIR, "decision_tree_pipeline")
+
+    # =====================================================================
+    # OPTIMIZED RANDOM FOREST
+    # =====================================================================
     best_rf_model = tune_random_forest(X_train_smote, y_train_smote, config.RANDOM_STATE)
     
-    # 8. Save the model immediately after tuning!
-    save_model(best_rf_model, config.MODEL_SAVE_DIR, "best_rf_model")
-
-    # 9. Final Evaluation (Testing the tuned model on Unseen Data)
     evaluate_model(best_rf_model, X_val, y_val, model_name="Optimized Random Forest")
+    save_pipeline(best_rf_model, preprocessor, config.MODEL_SAVE_DIR, "best_rf_pipeline")
 
-    # Train the Fast MLP (scikit)
-    # 1. Train it directly on the SMOTE data (no grid search required for the fast prototype)
+    # =====================================================================
+    # SCIKIT-LEARN FAST MLP
+    # =====================================================================
     mlp_model = train_fast_mlp(X_train_smote, y_train_smote, config.RANDOM_STATE)
     
-    # 2. Save it immediately for the demo
-    save_model(mlp_model, config.MODEL_SAVE_DIR, "fast_mlp_model")
-    
-    # 3. Evaluate it against the unseen Validation set
     evaluate_model(mlp_model, X_val, y_val, model_name="Scikit-Learn MLP Prototype")
+    save_pipeline(mlp_model, preprocessor, config.MODEL_SAVE_DIR, "fast_mlp_pipeline")
 
     # =====================================================================
     # THE PROPOSAL ENSEMBLE (VotingClassifier Integration)
     # =====================================================================
     print("\nBuilding the Single-File Ensemble Wrapper...")
 
-    # 1. Wrap the models together (voting='soft' averages probabilities automatically)
     ensemble_model = VotingClassifier(
         estimators=[
             ('random_forest', best_rf_model),
@@ -108,24 +126,16 @@ def main():
         ],
         voting='soft'
     )
-
-    # 2. Fit the wrapper so it routes data correctly
     ensemble_model.fit(X_train_smote, y_train_smote)
-
-    # 3. Save it as a single file
-    ensemble_path = config.MODEL_SAVE_DIR / "final_ensemble_model.joblib"
-    joblib.dump(ensemble_model, ensemble_path)
-    print(f"SUCCESS: Single ensemble saved to {ensemble_path}")
     
-    # 4. Evaluate it natively
     evaluate_model(ensemble_model, X_val, y_val, model_name="Proposal Ensemble (RF + Fast MLP)")
+    save_pipeline(ensemble_model, preprocessor, config.MODEL_SAVE_DIR, "final_ensemble_pipeline")
 
     # =====================================================================
     # TENSORFLOW STRICT COMPLIANCE
     # =====================================================================
     print("\nTraining Strict TensorFlow MLP Architecture...")
     
-    # Use np.asarray() to safely convert everything for TensorFlow
     X_train_tf = np.asarray(X_train_smote)
     y_train_tf = np.asarray(y_train_smote)
     X_val_tf = np.asarray(X_val)
@@ -133,7 +143,7 @@ def main():
 
     tf_model = build_and_train_tf(X_train_tf, y_train_tf, X_val_tf, y_val_tf, config.RANDOM_STATE)
     
-    # Save the TF model
+    # Save the TF model natively (no pipeline wrapping needed for the strict compliance artifact)
     tf_save_path = config.MODEL_SAVE_DIR / "mlp_tf_model.keras"
     tf_model.save(tf_save_path)
     print(f"\n[DIAGNOSTIC] TensorFlow model successfully saved to {tf_save_path}")
