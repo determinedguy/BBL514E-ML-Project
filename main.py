@@ -3,6 +3,9 @@ import time
 import joblib
 from datetime import datetime
 import numpy as np
+from sklearn.svm import LinearSVC
+from sklearn.ensemble import VotingClassifier
+from sklearn.compose import ColumnTransformer
 
 from src import config
 from src.logger import DualLogger
@@ -12,9 +15,7 @@ from src.models.train import train_baselines
 from src.models.tune import tune_random_forest
 from src.models.evaluate import evaluate_model
 from src.models.mlp import train_fast_mlp
-from src.models.export import save_pipeline  # <--- Clean import restored
-from sklearn.ensemble import VotingClassifier
-from sklearn.compose import ColumnTransformer
+from src.models.export import save_pipeline
 from src.models.mlp_tf import build_and_train_tf
 
 # Hijack the terminal output to save to a file
@@ -159,6 +160,16 @@ def main():
 
     # Evaluate using your native function
     evaluate_model(KerasScikitWrapper(tf_model), X_val_tf, y_val_tf, model_name="TensorFlow MLP Prototype")
+
+    # =====================================================================
+    # LINEAR SVM (PROFESSOR'S RECOMMENDATION)
+    # =====================================================================
+    print("\nTraining Linear SVM...")
+    linear_svm_model = LinearSVC(dual="auto", random_state=config.RANDOM_STATE, max_iter=2000)
+    linear_svm_model.fit(X_train_smote, y_train_smote)
+    
+    evaluate_model(linear_svm_model, X_val, y_val, model_name="Linear SVM")
+    save_pipeline(linear_svm_model, preprocessor, config.MODEL_SAVE_DIR, "linear_svm_pipeline")
 
     # End Master Timer
     pipeline_end = time.time()
