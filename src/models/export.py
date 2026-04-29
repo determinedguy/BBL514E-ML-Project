@@ -13,8 +13,8 @@ def save_pipeline(model, preprocessor, save_dir, filename):
     to prevent feature mismatch in production, then saves it to disk.
     """
     pipe = Pipeline([
-        ('preprocessor', preprocessor),
-        ('classifier', model)
+        ('prep', preprocessor), # preprocessor
+        ('clf', model) # classifier
     ])
     
     save_path = save_dir / f"{filename}.joblib"
