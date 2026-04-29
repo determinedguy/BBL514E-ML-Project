@@ -9,3 +9,9 @@ This project uses [CICIDS2017](https://www.unb.ca/cic/datasets/ids-2017.html) da
 The dataset has been uploaded to the Lightning storage. To use it in the project, use this path:
 
 `cd /teamspace/lightning_storage/MachineLearningCVE`
+
+## Important Commands
+
+`tar cvzf models.tar.gz models`
+
+`tar cvzf plots.tar.gz plots`
