@@ -3,6 +3,11 @@ numpy
 scikit-learn
 matplotlib
 seaborn
-joblib
 imbalanced-learn
-cicflowmeter
+pyarrow
+fastparquet
+joblib
+tensorflow
+fastapi
+uvicorn
+python-multipart
